@@ -5,9 +5,6 @@ import einops
 import numpy as np
 import sys
 
-from DenoisingUNet_arch import ConditionalUNet
-
-#Matching loss
 class MatchingLoss(nn.Module):
     def __init__(self, loss_type='l1', is_weighted=False):
         super().__init__()
