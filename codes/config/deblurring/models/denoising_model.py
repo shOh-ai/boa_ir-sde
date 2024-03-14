@@ -124,7 +124,7 @@ class DenoisingModel(BaseModel):
         if GT is not None:
             self.state_0 = GT.to(self.device)  # GT
 
-    def optimize_parameters(self, step, timesteps, sde=None):
+    def optimize_parameters(self, step, timesteps, sde=None, alpha=0.8): # alpha값 option으로 할 수 있게끔 구현해라
         sde.set_mu(self.condition)
 
         self.optimizer.zero_grad()
@@ -138,14 +138,24 @@ class DenoisingModel(BaseModel):
         # Learning the maximum likelihood objective for state x_{t-1}
         xt_1_expection = sde.reverse_sde_step_mean(self.state, score, timesteps)
         xt_1_optimum = sde.reverse_optimum_step(self.state, self.state_0, timesteps)
-        loss = self.weight * self.loss_fn(xt_1_expection, xt_1_optimum)
-
-        loss.backward()
+        
+        # 기존의 MatchingLoss 계산
+        matching_loss = self.weight * self.loss_fn(xt_1_expection, xt_1_optimum)
+        
+        # ContentLoss 계산
+        content_loss = self.content_loss.calculate_content_loss(self.state, self.state_0, cond, time) # 이 부분 instance 잘 받아오도록 수정 (pred_image, target_image)
+                                                                                                        # loss간 scaling 고려도 해야 함        
+        # Total Loss = MatchingLoss + alpha * ContentLoss
+        total_loss = alpha * matching_loss + (1-alpha) * content_loss
+        
+        total_loss.backward()
         self.optimizer.step()
         self.ema.update()
 
-        # set log
-        self.log_dict["loss"] = loss.item()
+        # 로그 설정(total_loss만 설정할지 결정해보자)
+        self.log_dict["matching_loss"] = matching_loss.item()
+        self.log_dict["content_loss"] = content_loss.item()
+        self.log_dict["total_loss"] = total_loss.item()
 
     def test(self, sde=None, save_states=False):
         sde.set_mu(self.condition)

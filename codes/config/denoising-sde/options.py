@@ -12,7 +12,7 @@ try:
 except ImportError:
     pass
 
-Loader, Dumper = OrderedYaml()
+#Loader, Dumper = OrderedYaml()
 
 
 def parse(opt_path, is_train=True):

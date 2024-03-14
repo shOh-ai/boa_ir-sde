@@ -1,0 +1,84 @@
+#### general settings
+name: ir-sde_train
+use_tb_logger: true
+model: denoising
+distortion: deblur # 개인에 맞게 수정
+gpu_ids: [0] # 개인에 맞게 수정
+
+sde:
+  max_sigma: 10
+  T: 12 # 실험 시 변경해가며 실험
+  schedule: cosine # linear, cosine
+  eps: 0.005
+
+degradation: # for some synthetic dataset that only have GTs
+  # for denoising
+  sigma: 25
+  noise_type: G # Gaussian noise: G
+
+  # for super-resolution
+  scale: 1 # LQ가 확보되어 있으므로 무조건 1로 세팅
+  
+#### datasets
+datasets:
+  train:
+    name: Train_Dataset
+    mode: LQGT
+    dataroot_GT: /media/hdd0/OSH/Task1/data_npy_2d/train_data/GT # 개인에 맞게 수정
+    dataroot_LQ: /media/hdd0/OSH/Task1/data_npy_2d/train_data/LQ# 개인에 맞게 수정
+
+    use_shuffle: true
+    n_workers: 4  # per GPU
+    batch_size: 4
+    GT_size: 128
+    LR_size: 128
+    use_flip: false
+    use_rot: false
+    color: Gray # 수정 했음
+  val:
+    name: Val_Dataset
+    mode: LQGT
+    dataroot_GT: /media/hdd0/OSH/Task1/data_npy_2d/validation_data/GT # 개인에 맞게 수정
+    dataroot_LQ: /media/hdd0/OSH/Task1/data_npy_2d/validation_data/LQ # 개인에 맞게 수정
+
+
+#### network structures
+network_G:
+  which_model_G: ConditionalUNet
+  setting:
+    in_nc: 1 # 흑백이므로 수정 했음
+    out_nc: 1 # 흑백이므로 수정 했음
+    nf: 64
+    depth: 4
+
+#### path
+path:
+  pretrain_model_G: ~
+  strict_load: true
+  resume_state: ~
+
+#### training settings: learning rate scheme, loss
+train:
+  optimizer: Adam # Adam, AdamW, Lion
+  lr_G: !!float 1e-4
+  lr_scheme: MultiStepLR
+  beta1: 0.9
+  beta2: 0.99
+  niter: 68352 # 데이터 수에 맞게 계산 필요(현재 3 epoch 기준으로 되어 있음)
+  warmup_iter: -1  # no warm up
+  lr_steps: [22784, 34176, 45568] # 데이터 수에 맞게 계산 필요(현재 3 epoch 기준으로 되어 있음)
+  lr_gamma: 0.5
+  eta_min: !!float 1e-7
+
+  # criterion
+  is_weighted: False
+  loss_type: l1
+  weight: 1.0
+
+  manual_seed: 0
+  val_freq: 22784 # 데이터 수에 맞게 계산 필요(현재 1 epoch 기준으로 되어 있음)
+
+#### logger
+logger:
+  print_freq: 100
+  save_checkpoint_freq: 22784 # 데이터 수에 맞게 계산 필요(현재 1 epoch 기준으로 되어 있음)

@@ -234,8 +234,8 @@ class IRSDE(SDE):
             score = self.score_fn(x, t, **kwargs)
             x = self.reverse_sde_step(x, score, t)
 
-            if save_states: # only consider to save 12 images
-                interval = self.T // 12
+            if save_states: # only consider to save 100 images
+                interval = self.T // 100
                 if t % interval == 0:
                     idx = t // interval
                     os.makedirs(save_dir, exist_ok=True)
@@ -250,8 +250,8 @@ class IRSDE(SDE):
             score = self.score_fn(x, t, **kwargs)
             x = self.reverse_ode_step(x, score, t)
 
-            if save_states: # only consider to save 12 images
-                interval = self.T // 12
+            if save_states: # only consider to save 100 images
+                interval = self.T // 100
                 if t % interval == 0:
                     idx = t // interval
                     os.makedirs(save_dir, exist_ok=True)
@@ -452,7 +452,7 @@ class DenoisingSDE(SDE):
             x = self.reverse_sde_step(x, score, t)
 
             if save_states:
-                interval = self.T // 12
+                interval = self.T // 100
                 if t % interval == 0:
                     idx = t // interval
                     os.makedirs(save_dir, exist_ok=True)
@@ -471,7 +471,7 @@ class DenoisingSDE(SDE):
             x = self.reverse_ode_step(x, score, t)
 
             if save_states:
-                interval = self.T // 12
+                interval = self.T // 100
                 if t % interval == 0:
                     state = x.clone()
                     if x0 is not None:
@@ -552,5 +552,4 @@ class DenoisingSDE(SDE):
         noisy_states = noises * noise_level + x0
 
         return timesteps, noisy_states
-
 

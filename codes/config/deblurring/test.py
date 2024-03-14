@@ -106,29 +106,65 @@ for test_loader in test_loaders:
         model.test(sde, save_states=True)
         toc = time.time()
         test_times.append(toc - tic)
+        
+         # MINMAX 고려해서 변환
+        if opt["min"] != None:
+            min_ = opt["min"]
+        else: 
+            min_ = 0
+        if opt["max"] != None:
+            max_ = opt["max"]
+        else: 
+            max_ = 1
 
         visuals = model.get_current_visuals()
         SR_img = visuals["Output"]
-        output = util.tensor2img(SR_img.squeeze())  # uint8
-        LQ_ = util.tensor2img(visuals["Input"].squeeze())  # uint8
-        GT_ = util.tensor2img(visuals["GT"].squeeze())  # uint8
         
+        ''' (*이미지로 저장하고 싶을 경우 사용!)
+        output_img = util.tensor2img(SR_img.squeeze())    # uint8
+        LQ_img = util.tensor2img(visuals["Input"].squeeze(),min_max=(min_, max_))  # uint8
+        GT_img = util.tensor2img(visuals["GT"].squeeze(),min_max=(min_, max_))  # uint8
+        '''
+        
+        output = util.tensor2npy(SR_img.squeeze(),min_max=(min_, max_))# float32
+        LQ_= util.tensor2npy(visuals["Input"].squeeze(),min_max=(min_, max_))  # float32
+        GT_ = util.tensor2npy(visuals["GT"].squeeze(),min_max=(min_, max_))  # float32        
+        
+        #suffix 사용해서 infer된 test 이미지 저장 
+        
+        ''' (*이미지로 저장하고 싶을 경우 사용!)
         suffix = opt["suffix"]
         if suffix:
             save_img_path = os.path.join(dataset_dir, img_name + suffix + ".png")
         else:
             save_img_path = os.path.join(dataset_dir, img_name + ".png")
-        util.save_img(output, save_img_path)
-
+        util.save_img(output_img, save_img_path)
+        '''
+        
+        suffix = opt["suffix"]
+        if suffix:
+            save_img_path = os.path.join(dataset_dir, img_name + suffix + ".npy")
+        else:
+            save_img_path = os.path.join(dataset_dir, img_name + ".npy")
+        util.save_numpy(output, save_img_path)
+    
+        ''' (*이미지로 저장하고 싶을 경우 사용!)
         # remove it if you only want to save output images
         LQ_img_path = os.path.join(dataset_dir, img_name + "_LQ.png")
         GT_img_path = os.path.join(dataset_dir, img_name + "_HQ.png")
-        util.save_img(LQ_, LQ_img_path)
-        util.save_img(GT_, GT_img_path)
+        util.save_img(LQ_img, LQ_img_path)
+        util.save_img(GT_img, GT_img_path)
+        '''
+        
+        # remove it if you only want to save output images
+        LQ_npy_path = os.path.join(dataset_dir, img_name + "_LQ.npy")
+        GT_npy_path = os.path.join(dataset_dir, img_name + "_HQ.npy")
+        util.save_numpy(LQ_, LQ_npy_path)
+        util.save_numpy(GT_, GT_npy_path)  
 
         if need_GT:
-            gt_img = GT_ / 255.0
-            sr_img = output / 255.0
+            gt_img = GT_
+            sr_img = output
 
             crop_border = opt["crop_border"] if opt["crop_border"] else scale
             if crop_border == 0:

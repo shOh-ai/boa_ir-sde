@@ -1,0 +1,41 @@
+name: ir-sde_test
+suffix: ~  # add suffix to saved images
+model: denoising
+distortion: deblur #수정했음
+gpu_ids: [0]
+
+sde:
+  max_sigma: 10
+  T: 12
+  schedule: cosine # linear, cosine
+  eps: 0.005
+  
+degradation:
+  # for denoising
+  sigma: 25
+  noise_type: G # Gaussian noise: G
+
+  # for super-resolution
+  scale: 1 #수정했음 (4 -> 1, 우리의 경우 LQ와 GT 둘 다 크기 같음)
+
+datasets:
+  test1:
+    name: test_data
+    mode: LQGT
+    dataroot_GT: /media/hdd0/OSH/Task1/data_npy_2d/test_data/GT # #수정했음 (각자 경로에 맞게 수정 필요)
+    dataroot_LQ: /media/hdd0/OSH/Task1/data_npy_2d/test_data/sparse # #수정했음 (각자 경로에 맞게 수정 필요)
+    min: ~ # 데이터 저장 시 특정 범위로 정규화를 원할 때 사용 가능(기본적으로 0으로 세팅)
+    max: ~ # 데이터 저장 시 특정 범위로 정규화를 원할 때 사용 가능(기본적으로 1로 세팅)
+    
+#### network structures
+network_G:
+  which_model_G: ConditionalUNet
+  setting:
+    in_nc: 1 # #수정했음 (grayscale image 이므로)
+    out_nc: 1 # #수정했음 (grayscale image 이므로)
+    nf: 64
+    depth: 4
+
+#### path
+path:
+  pretrain_model_G: /media/hdd0/OSH/Task1/sde/experiments/deblurring/ir-sde/models/40000_G.pth # 수정했음 (각자 경로에 맞게 수정 필요)

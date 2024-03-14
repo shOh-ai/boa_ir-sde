@@ -21,8 +21,6 @@ import utils as util
 from data import create_dataloader, create_dataset
 from data.data_sampler import DistIterSampler
 
-from data.util import bgr2ycbcr
-
 # torch.autograd.set_detect_anomaly(True)
 
 def init_dist(backend="nccl", **kwargs):
@@ -50,6 +48,13 @@ def main():
     parser.add_argument("--local_rank", type=int, default=0)
     args = parser.parse_args()
     opt = option.parse(args.opt, is_train=True)
+
+    # GPU 사용 여부 확인 및 출력
+    if torch.cuda.is_available():
+        print("CUDA is available. Training on GPU.")
+        print(f"Current GPU ID: {torch.cuda.current_device()}, Model: {torch.cuda.get_device_name(torch.cuda.current_device())}")
+    else:
+        print("CUDA is not available. Training on CPU.")
 
     # convert to NoneDict, which returns None for missing keys
     opt = option.dict_to_nonedict(opt)
@@ -222,7 +227,9 @@ def main():
     )
 
     best_psnr = 0.0
-    best_iter = 0
+    best_psnr_iter = 0
+    best_loss = float('inf')
+    best_loss_iter = 0
     error = mp.Value('b', False)
 
     for epoch in range(start_epoch, total_epochs + 1):
@@ -244,6 +251,7 @@ def main():
             )
 
             if current_step % opt["logger"]["print_freq"] == 0:
+                
                 logs = model.get_current_log()
                 message = "<epoch:{:3d}, iter:{:8,d}, lr:{:.3e}> ".format(
                     epoch, current_step, model.get_current_learning_rate()
@@ -259,8 +267,10 @@ def main():
 
             # validation, to produce ker_map_list(fake)
             if current_step % opt["train"]["val_freq"] == 0 and rank <= 0:
-                avg_psnr = 0.0
+                avg_psnr = 0.0 # Initialize avg_psnr for this validation
+                total_loss = 0.0  # Initialize total_loss for this validation                
                 idx = 0
+                
                 for _, val_data in enumerate(val_loader):
 
                     LQ, GT = val_data["LQ"], val_data["GT"]
@@ -273,46 +283,56 @@ def main():
 
                     output = util.tensor2img(visuals["Output"].squeeze())  # uint8
                     gt_img = util.tensor2img(visuals["GT"].squeeze())  # uint8
-
+                    
+                    # 이제 최근에 계산된 loss를 가져옵니다.
+                    current_loss_log = model.get_current_log()
+                    current_loss = current_loss_log["loss"]
+                    total_loss += current_loss
+                    
                     # calculate PSNR
                     avg_psnr += util.calculate_psnr(output, gt_img)
                     idx += 1
 
                 avg_psnr = avg_psnr / idx
-
+                avg_loss = total_loss / idx
+                
+                # Check if this is the best PSNR
                 if avg_psnr > best_psnr:
                     best_psnr = avg_psnr
-                    best_iter = current_step
+                    best_psnr_iter = current_step
+                    
+                    # Save model as the best PSNR model
+                    model.save("best_psnr")
+                    model.save_training_state(epoch, current_step, best_psnr=best_psnr, best_loss=best_loss)
+                    
+                # Check if this is the best Loss
+                if avg_loss < best_loss:
+                    best_loss = avg_loss
+                    best_loss_iter = current_step
+                    
+                    # Save model as the best Loss model
+                    model.save("best_loss")
+                    model.save_training_state(epoch, current_step, best_psnr=best_psnr, best_loss=best_loss)
+                                            
+                # Log validation results
+                logger.info("# Validation # PSNR: {:.6f}, Best PSNR: {:.6f} at Iter: {}, Loss: {:.6f}, Best Loss: {:.6f} at Iter: {}".format(avg_psnr, best_psnr, best_psnr_iter, avg_loss, best_loss, best_loss_iter))                            
 
-                # log
-                logger.info("# Validation # PSNR: {:.6f}, Best PSNR: {:.6f}| Iter: {}".format(avg_psnr, best_psnr, best_iter))
-                logger_val = logging.getLogger("val")  # validation logger
-                logger_val.info(
-                    "<epoch:{:3d}, iter:{:8,d}, psnr: {:.6f}".format(
-                        epoch, current_step, avg_psnr
-                    )
-                )
-                print("<epoch:{:3d}, iter:{:8,d}, psnr: {:.6f}".format(
-                        epoch, current_step, avg_psnr
-                    ))
                 # tensorboard logger
                 if opt["use_tb_logger"] and "debug" not in opt["name"]:
                     tb_logger.add_scalar("psnr", avg_psnr, current_step)
 
             if error.value:
                 sys.exit(0)
-            #### save models and training states
-            if current_step % opt["logger"]["save_checkpoint_freq"] == 0:
-                if rank <= 0:
-                    logger.info("Saving models and training states.")
-                    model.save(current_step)
-                    model.save_training_state(epoch, current_step)
 
+    # After training loop
     if rank <= 0:
-        logger.info("Saving the final model.")
-        model.save("latest")
-        logger.info("End of Predictor and Corrector training.")
-    tb_logger.close()
+        # Ensure the final best models are saved
+        if current_step != best_psnr_iter:
+            model.save("best_psnr_final")
+        if current_step != best_loss_iter:
+            model.save("best_loss_final")
+
+    tb_logger.close()  # Properly close the tensorboard logger
 
 
 if __name__ == "__main__":

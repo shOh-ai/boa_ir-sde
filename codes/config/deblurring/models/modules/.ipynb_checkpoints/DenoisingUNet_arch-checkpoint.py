@@ -10,21 +10,21 @@ from .module_util import (
     RandomOrLearnedSinusoidalPosEmb,
     NonLinearity,
     Upsample, Downsample,
-    default_conv,
-    ResBlock, Upsampler,
-    LinearAttention, Attention,
+    default_conv3d,
+    ResBlock3D,
+    LinearAttention3D, Attention3D,
     PreNorm, Residual)
 
 
 class ConditionalUNet(nn.Module):
-    def __init__(self, in_nc, out_nc, nf, depth=4, upscale=1):
+    def __init__(self, in_nc, out_nc, nf, depth=4):
         super().__init__()
         self.depth = depth
-        self.upscale = upscale # not used
 
-        block_class = functools.partial(ResBlock, conv=default_conv, act=NonLinearity())
+        block_class = functools.partial(ResBlock3D, conv=default_conv3d, act=NonLinearity())
 
-        self.init_conv = default_conv(in_nc*2, nf, 7)
+         # 초기 컨볼루션 레이어는 입력 채널의 수가 2배가 되도록 변경합니다. (in_nc + cond_nc)
+        self.init_conv = default_conv3d(in_nc*2, nf, kernel_size=7)
         
         # time embeddings
         time_dim = nf * 4
@@ -45,7 +45,7 @@ class ConditionalUNet(nn.Module):
             nn.GELU(),
             nn.Linear(time_dim, time_dim)
         )
-
+        
         # layers
         self.downs = nn.ModuleList([])
         self.ups = nn.ModuleList([])
@@ -56,48 +56,52 @@ class ConditionalUNet(nn.Module):
             self.downs.append(nn.ModuleList([
                 block_class(dim_in=dim_in, dim_out=dim_in, time_emb_dim=time_dim),
                 block_class(dim_in=dim_in, dim_out=dim_in, time_emb_dim=time_dim),
-                Residual(PreNorm(dim_in, LinearAttention(dim_in))),
-                Downsample(dim_in, dim_out) if i != (depth-1) else default_conv(dim_in, dim_out)
+                Residual(PreNorm(dim_in, LinearAttention3D(dim_in))),
+                Downsample(dim_in, dim_out) if i != (depth-1) else default_conv3d(dim_in, dim_out)
             ]))
 
             self.ups.insert(0, nn.ModuleList([
                 block_class(dim_in=dim_out + dim_in, dim_out=dim_out, time_emb_dim=time_dim),
                 block_class(dim_in=dim_out + dim_in, dim_out=dim_out, time_emb_dim=time_dim),
-                Residual(PreNorm(dim_out, LinearAttention(dim_out))),
-                Upsample(dim_out, dim_in) if i!=0 else default_conv(dim_out, dim_in)
+                Residual(PreNorm(dim_out, LinearAttention3D(dim_out))),
+                Upsample(dim_out, dim_in) if i!=0 else default_conv3d(dim_out, dim_in)
             ]))
 
         mid_dim = nf * int(math.pow(2, depth))
         self.mid_block1 = block_class(dim_in=mid_dim, dim_out=mid_dim, time_emb_dim=time_dim)
-        self.mid_attn = Residual(PreNorm(mid_dim, LinearAttention(mid_dim)))
+        self.mid_attn = Residual(PreNorm(mid_dim, Attention3D(mid_dim)))
         self.mid_block2 = block_class(dim_in=mid_dim, dim_out=mid_dim, time_emb_dim=time_dim)
 
         self.final_res_block = block_class(dim_in=nf * 2, dim_out=nf, time_emb_dim=time_dim)
-        self.final_conv = nn.Conv2d(nf, out_nc, 3, 1, 1)
-
-    def check_image_size(self, x, h, w):
+        self.final_conv = nn.Conv3d(nf, out_nc, 3, 1, 1)
+    
+    def check_image_size(self, x, d, h, w):
         s = int(math.pow(2, self.depth))
+        mod_pad_d = (s - d % s) % s
         mod_pad_h = (s - h % s) % s
         mod_pad_w = (s - w % s) % s
-        x = F.pad(x, (0, mod_pad_w, 0, mod_pad_h), 'reflect')
+        x = F.pad(x, (0, mod_pad_w, 0, mod_pad_h, 0, mod_pad_d), 'reflect')
         return x
 
-    def forward(self, xt, cond, time):
 
+    def forward(self, xt, cond, time):
+        if x.dim() != 5:
+            raise ValueError(f"Input must be a 5D tensor but got {x.dim()}D tensor")        
         if isinstance(time, int) or isinstance(time, float):
-            time = torch.tensor([time]).to(xt.device)
+            time = torch.tensor([time], dtype=torch.float32).to(xt.device)
         
         x = xt - cond
         x = torch.cat([x, cond], dim=1)
-
-        H, W = x.shape[2:]
-        x = self.check_image_size(x, H, W)
-
+    
+        # 3D 데이터의 깊이(D), 높이(H), 너비(W)를 고려
+        D, H, W = x.shape[2:]
+        x = self.check_image_size(x, D, H, W)
+    
         x = self.init_conv(x)
         x_ = x.clone()
-
+    
         t = self.time_mlp(time)
-
+    
         h = []
 
         for b1, b2, attn, downsample in self.downs:
@@ -128,8 +132,9 @@ class ConditionalUNet(nn.Module):
 
         x = self.final_res_block(x, t)
         x = self.final_conv(x)
-
-        x = x[..., :H, :W]
+    
+        # 3D 데이터에 맞게 원본 입력 데이터의 크기로 조정
+        x = x[..., :D, :H, :W]
         
         return x
 
