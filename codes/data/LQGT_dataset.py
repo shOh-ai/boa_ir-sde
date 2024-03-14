@@ -55,13 +55,13 @@ class LQGTDataset(data.Dataset):
         # get GT image
         GT_path = self.GT_paths[index]
         resolution = None
-        img_GT = util.read_numpy_file(GT_path)
+        img_GT = util.read_numpy_file(GT_path, self.opt["min"], self.opt["max"])
 
         # get LR image
         if self.LR_paths:  # LR exist
             LR_path = self.LR_paths[index]
             resolution = None
-            img_LR = util.read_numpy_file(LR_path)
+            img_LR = util.read_numpy_file(LR_path, self.opt["min"], self.opt["max"])
             
         # 이미지가 흑백인 경우 차원 추가 (필요한 경우에만), 차원 확인 및 추가 로직을 여기로 이동
         if img_GT.ndim == 2:
